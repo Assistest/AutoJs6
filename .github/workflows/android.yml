@@ -5,6 +5,9 @@ on:
   push:
     branches: [ "master" ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -98,3 +101,20 @@ jobs:
           name: autojs6-alipay-release-apks
           path: app/build/outputs/apk/app/release/*.apk
           if-no-files-found: error
+
+      - name: 发布 GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^VERSION_NAME=//p' version.properties | tr -d '\r')"
+          test -n "$version"
+
+          tag="autojs6-alipay-v${version}-build-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          gh release create "$tag" \
+            app/build/outputs/apk/app/release/*.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "AutoJs6 Alipay v${version} build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
+            --notes "集成支付宝应用支付 SDK，并使用仓库配置的固定 Release 证书签名。"
