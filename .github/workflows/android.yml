@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
 
 jobs:
   build:
@@ -36,6 +34,31 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: 配置 Release 签名
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$RELEASE_KEYSTORE_BASE64"
+          test -n "$RELEASE_KEY_ALIAS"
+          test -n "$RELEASE_STORE_PASSWORD"
+          test -n "$RELEASE_KEY_PASSWORD"
+
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/release.jks"
+
+          {
+            printf 'storeFile=%s\n' "$RUNNER_TEMP/release.jks"
+            printf 'storePassword=%s\n' "$RELEASE_STORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$RELEASE_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$RELEASE_KEY_PASSWORD"
+          } > sign.properties
+
       - name: 构建脚本打包模板
         run: ./gradlew --stacktrace assembleInrtRelease
 
@@ -46,12 +69,32 @@ jobs:
             | strings \
             | grep -F 'Lcom/alipay/sdk/app/PayTask;'
 
-      - name: 构建可安装的调试版 AutoJs6
-        run: ./gradlew --stacktrace assembleAppDebug
+      - name: 构建签名 Release APK
+        run: ./gradlew --stacktrace assembleAppRelease
 
-      - name: 上传调试版 APK
+      - name: 验证 Release APK 签名
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner \
+            | sort -V \
+            | tail -n 1)"
+          test -x "$apksigner"
+
+          mapfile -t apks < <(find app/build/outputs/apk/app/release \
+            -maxdepth 1 \
+            -type f \
+            -name '*.apk' \
+            -print)
+          test "${#apks[@]}" -gt 0
+
+          for apk in "${apks[@]}"; do
+            "$apksigner" verify --verbose --print-certs "$apk"
+          done
+
+      - name: 上传 Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: autojs6-alipay-debug-apks
-          path: app/build/outputs/apk/app/debug/*.apk
+          name: autojs6-alipay-release-apks
+          path: app/build/outputs/apk/app/release/*.apk
           if-no-files-found: error
