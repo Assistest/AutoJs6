@@ -451,7 +451,8 @@ dependencies /* Archived */ {
 }
 
 dependencies /* Reserved for auto append by IDE */ {
-
+    // 支付宝 SDK 必须进入宿主与 inrt 模板，脚本运行时才能直接加载 PayTask。
+    implementation("com.alipay.sdk:alipaysdk-android:15.8.42")
 }
 
 android {
